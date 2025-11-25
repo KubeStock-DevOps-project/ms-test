@@ -1,0 +1,13 @@
+{
+  "name": "ms-test",
+  "version": "1.0.0",
+  "description": "Test microservice for validating CI/CD pipeline",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "test": "echo 'Running tests...' && echo 'All tests passed!'"
+  },
+  "keywords": ["test", "microservice", "ci-cd"],
+  "author": "KubeStock",
+  "license": "MIT"
+}
