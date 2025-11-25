@@ -10,7 +10,7 @@ const server = http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ 
       message: 'Hello from ms-test microservice!',
-      version: '1.0.0',
+      version: '1.0.1',
       timestamp: new Date().toISOString()
     }));
   }
