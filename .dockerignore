@@ -1,0 +1,6 @@
+# Build stage files
+*.log
+.git
+.github
+README.md
+.gitignore
