@@ -2,7 +2,8 @@ name: Build and Push to ECR
 
 on:
   push:
-    branches: [main]
+    tags:
+      - 'v*.*.*'
 
 env:
   AWS_REGION: ap-south-1
@@ -43,20 +44,31 @@ jobs:
       - name: Extract metadata for Docker
         id: meta
         run: |
+          # Extract version from tag (removes 'v' prefix)
+          VERSION=${GITHUB_REF_NAME#v}
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "sha_short=$(echo ${{ github.sha }} | cut -c1-7)" >> $GITHUB_OUTPUT
-          echo "timestamp=$(date +%Y%m%d-%H%M%S)" >> $GITHUB_OUTPUT
+          
+          # Extract major and major.minor for additional tags
+          MAJOR=$(echo $VERSION | cut -d. -f1)
+          MINOR=$(echo $VERSION | cut -d. -f2)
+          echo "major=$MAJOR" >> $GITHUB_OUTPUT
+          echo "major_minor=$MAJOR.$MINOR" >> $GITHUB_OUTPUT
 
       - name: Build and tag Docker image
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          IMAGE_TAG_SHA: ${{ github.sha }}
+          VERSION: ${{ steps.meta.outputs.version }}
+          MAJOR: ${{ steps.meta.outputs.major }}
+          MAJOR_MINOR: ${{ steps.meta.outputs.major_minor }}
           IMAGE_TAG_SHORT: ${{ steps.meta.outputs.sha_short }}
-          IMAGE_TAG_TIMESTAMP: ${{ steps.meta.outputs.timestamp }}
         run: |
           echo "🐳 Building Docker image..."
-          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG_SHA \
+          echo "Version: $VERSION"
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$VERSION \
+                       -t $ECR_REGISTRY/$ECR_REPOSITORY:$MAJOR_MINOR \
+                       -t $ECR_REGISTRY/$ECR_REPOSITORY:$MAJOR \
                        -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG_SHORT \
-                       -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG_TIMESTAMP \
                        -t $ECR_REGISTRY/$ECR_REPOSITORY:latest \
                        .
           echo "✅ Image built successfully"
@@ -64,7 +76,7 @@ jobs:
       - name: Run Trivy security scan
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
+          image-ref: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ steps.meta.outputs.version }}
           format: 'table'
           exit-code: '0'
           ignore-unfixed: true
@@ -74,39 +86,44 @@ jobs:
       - name: Push image to Amazon ECR
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          IMAGE_TAG_SHA: ${{ github.sha }}
+          VERSION: ${{ steps.meta.outputs.version }}
+          MAJOR: ${{ steps.meta.outputs.major }}
+          MAJOR_MINOR: ${{ steps.meta.outputs.major_minor }}
           IMAGE_TAG_SHORT: ${{ steps.meta.outputs.sha_short }}
-          IMAGE_TAG_TIMESTAMP: ${{ steps.meta.outputs.timestamp }}
         run: |
           echo "⬆️  Pushing images to Amazon ECR..."
-          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG_SHA
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$VERSION
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$MAJOR_MINOR
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$MAJOR
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG_SHORT
-          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG_TIMESTAMP
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
           echo "✅ All tags pushed successfully"
 
       - name: Image pushed notification
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          IMAGE_TAG_SHA: ${{ github.sha }}
+          VERSION: ${{ steps.meta.outputs.version }}
+          MAJOR: ${{ steps.meta.outputs.major }}
+          MAJOR_MINOR: ${{ steps.meta.outputs.major_minor }}
           IMAGE_TAG_SHORT: ${{ steps.meta.outputs.sha_short }}
-          IMAGE_TAG_TIMESTAMP: ${{ steps.meta.outputs.timestamp }}
         run: |
           echo "📢 Build and Push Complete"
           echo ""
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          echo "✅ Image Ready for Deployment"
+          echo "✅ Release $VERSION Ready for Deployment"
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           echo "Service: ms-test"
           echo "Registry: $ECR_REGISTRY"
           echo ""
           echo "📦 Pushed Tags:"
-          echo "  • $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG_SHA"
-          echo "  • $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG_SHORT"
-          echo "  • $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG_TIMESTAMP"
+          echo "  • $ECR_REGISTRY/$ECR_REPOSITORY:$VERSION (full version)"
+          echo "  • $ECR_REGISTRY/$ECR_REPOSITORY:$MAJOR_MINOR (major.minor)"
+          echo "  • $ECR_REGISTRY/$ECR_REPOSITORY:$MAJOR (major)"
+          echo "  • $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG_SHORT (commit)"
           echo "  • $ECR_REGISTRY/$ECR_REPOSITORY:latest"
           echo ""
-          echo "Commit: $IMAGE_TAG_SHA"
+          echo "Git Tag: ${{ github.ref_name }}"
+          echo "Commit: ${{ github.sha }}"
           echo "Author: ${{ github.actor }}"
           echo ""
           echo "🔄 ArgoCD will detect and deploy this image via GitOps"
